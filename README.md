@@ -14,7 +14,7 @@ This writes `sample_transcript_notes.md`. Check the notes against the transcript
 
 ## Local transcription (recording to plain text)
 
-On this Apple M5 Mac, FFmpeg 8.1 is installed. Install [whisper.cpp](https://formulae.brew.sh/formula/whisper.cpp) and download an [English `small.en` model](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md) yourself. The model is about 466 MiB; `models/` is ignored by Git.
+This workflow requires FFmpeg, [whisper.cpp](https://formulae.brew.sh/formula/whisper.cpp), and an [English `small.en` model](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md). FFmpeg was already installed on the tested Mac. To install the remaining tools yourself:
 
 ```sh
 brew install whisper.cpp
@@ -31,7 +31,7 @@ julia --project=. transcribe_local.jl "/full/path/lecture video.mp4" \
   --output transcripts/lecture_excerpt.txt
 ```
 
-Omit `--start`, `--duration`, and `--output` for the full recording; the default output is `transcripts/<recording-name>_transcript.txt`. The command extracts temporary 16 kHz mono audio with FFmpeg, uses local `whisper-cli`, saves text without timestamps, prints elapsed processing time, and removes the temporary audio. It refuses to overwrite an existing transcript. Paths with spaces must be quoted. It does not upload recordings, download models, or run the notes program. On a Mac without FFmpeg, install it with `brew install ffmpeg`.
+Omit `--start`, `--duration`, and `--output` for the full recording; the default output is `transcripts/<recording-name>_transcript.txt`. The command extracts temporary 16 kHz mono audio with FFmpeg, uses local `whisper-cli`, saves text without timestamps, prints elapsed processing time, and removes the temporary audio. It refuses to overwrite an existing transcript. Quote paths with spaces. Keep personal recordings in `recordings/`, models in `models/`, and output in `transcripts/`; these folders are ignored by Git. The command does not upload recordings, download models, or run the notes program. On a Mac without FFmpeg, install it with `brew install ffmpeg`.
 
 ## Cloud setup
 
@@ -56,9 +56,9 @@ If cloud notes fail, the program uses the offline summarizer. Audio still requir
 julia --project=. test/runtests.jl
 ```
 
-**Tested:** Offline transcript-to-notes processing was manually tested with `sample_transcript.txt`, and the generated notes were reviewed. The automated regression suite passed, including local transcription tests with mock executables. A synthetic MP4 was converted by the installed FFmpeg to 16 kHz, mono, 16-bit PCM WAV; a mock `whisper-cli` completed the local command.
+**Tested:** Offline transcript-to-notes processing was manually tested with `sample_transcript.txt`, and the generated notes were reviewed. The automated regression suite passed all 63 assertions, including local transcription tests with mock executables. A synthetic MP4 was converted by FFmpeg to 16 kHz, mono, 16-bit PCM WAV. The local transcription workflow was run on a real English lecture MP4, producing an excerpt transcript and a full transcript. The excerpt is about 541 words and the full transcript about 6,366 words. The generated text was checked for readable content and lack of timestamps; transcription accuracy has not been measured against the recording.
 
-**Not tested:** Real speech recognition with whisper.cpp, the 2-3 minute lecture excerpt, a longer recording benchmark, live cloud APIs, and cloud audio transcription. `whisper-cli`, the model, and the lecture video were not available for those checks.
+**Not tested:** A timed comparison of the excerpt and longer recording, live cloud APIs, and cloud audio transcription. The earlier runs' elapsed processing times were not retained.
 
 `transcribe_local.jl` is the standalone local transcription command. `LectureLearner.jl` and `TextTools.jl` remain the notes pipeline. `docs/` holds its detailed guide.
 
