@@ -55,18 +55,72 @@ anthropic_key() = get(ENV, "ANTHROPIC_API_KEY", "")
 # ------------------------------------------------------------
 # Stage 1 — Transcription (OpenAI Whisper API)
 # ------------------------------------------------------------
+# Whisper rejects uploads over 25 MB. Stay safely under that per request.
+# Overridable via WHISPER_CHUNK_BYTES (handy for testing the split path).
+const WHISPER_LIMIT = parse(Int, get(ENV, "WHISPER_CHUNK_BYTES", string(24 * 1024 * 1024)))
+
+ffmpeg_bin()  = Sys.which("ffmpeg")
+ffprobe_bin() = Sys.which("ffprobe")
+
+"Length of an audio file in seconds (via ffprobe)."
+function audio_duration(path::AbstractString)
+    probe = ffprobe_bin()
+    probe === nothing && error("ffprobe is required to split large audio. Install ffmpeg and ensure it is on your PATH.")
+    out = read(`$probe -v error -show_entries format=duration -of csv=p=0 $path`, String)
+    return parse(Float64, strip(out))
+end
+
+"Send a single (already small enough) audio file to Whisper and return its text."
+function whisper_request(path::AbstractString)
+    open(path) do file
+        form = HTTP.Form(Dict("file" => file, "model" => WHISPER_MODEL, "response_format" => "text"))
+        r = HTTP.post("https://api.openai.com/v1/audio/transcriptions",
+                      ["Authorization" => "Bearer " * openai_key()], form; request_timeout = 600)
+        String(r.body)
+    end
+end
+
 """
-Upload an audio file (mp3, m4a, wav, webm, mp4 … up to 25 MB) and return the transcript.
+Transcribe an audio file (mp3, m4a, wav, webm, mp4 …) of any length and return the transcript.
+
+The raw file is first transcoded to 16 kHz mono MP3 — Whisper's native sample rate, which
+also shrinks large recordings dramatically. If the result still exceeds Whisper's 25 MB
+per-request limit, it is split into time-based chunks that are transcribed in order and joined.
 """
 function transcribe_audio(path::AbstractString)
     isempty(openai_key()) && error("OPENAI_API_KEY is not set — transcription needs it")
     load_cloud_packages()
-    @info "Uploading audio for transcription" file = path
-    return open(path) do file
-        form = HTTP.Form(Dict("file" => file, "model" => WHISPER_MODEL, "response_format" => "text"))
-        r = HTTP.post("https://api.openai.com/v1/audio/transcriptions",
-                      ["Authorization" => "Bearer " * openai_key()], form; readtimeout = 300)
-        String(r.body)
+    ffmpeg = ffmpeg_bin()
+    ffmpeg === nothing && error("ffmpeg is required for audio transcription. Install it (e.g. `brew install ffmpeg`) and ensure it is on your PATH.")
+
+    return mktempdir() do dir
+        # 1. Transcode to a compact, Whisper-native format.
+        compact = joinpath(dir, "audio.mp3")
+        @info "Preparing audio for transcription" file = path
+        run(pipeline(`$ffmpeg -nostdin -y -i $path -ac 1 -ar 16000 -b:a 48k $compact`,
+                     stdout = devnull, stderr = devnull))
+
+        bytes = filesize(compact)
+        if bytes <= WHISPER_LIMIT
+            @info "Uploading audio for transcription" megabytes = round(bytes / 1024 / 1024; digits = 1)
+            return whisper_request(compact)
+        end
+
+        # 2. Still too big — split into chunks that each stay under the limit.
+        dur = audio_duration(compact)
+        chunk_secs = max(1, floor(Int, WHISPER_LIMIT / (bytes / dur)))
+        @info "Audio exceeds Whisper's limit — splitting into chunks" total_megabytes = round(bytes / 1024 / 1024; digits = 1) chunk_seconds = chunk_secs
+        run(pipeline(`$ffmpeg -nostdin -y -i $compact -f segment -segment_time $chunk_secs -c copy $(joinpath(dir, "chunk_%03d.mp3"))`,
+                     stdout = devnull, stderr = devnull))
+
+        chunks = sort(filter(f -> startswith(basename(f), "chunk_"), readdir(dir; join = true)))
+        isempty(chunks) && error("Audio splitting produced no chunks")
+        parts = String[]
+        for (i, c) in enumerate(chunks)
+            @info "Transcribing chunk" progress = "$i/$(length(chunks))"
+            push!(parts, strip(whisper_request(c)))
+        end
+        return join(parts, " ")
     end
 end
 
@@ -106,7 +160,7 @@ function ask_claude(prompt)
         "messages" => [Dict("role" => "user", "content" => prompt)]))
     r = HTTP.post("https://api.anthropic.com/v1/messages",
                   ["x-api-key" => anthropic_key(), "anthropic-version" => "2023-06-01",
-                   "Content-Type" => "application/json"], body; readtimeout = 120)
+                   "Content-Type" => "application/json"], body; request_timeout = 120)
     return JSON3.read(r.body).content[1].text
 end
 
@@ -118,7 +172,7 @@ function ask_openai(prompt)
         "messages" => [Dict("role" => "user", "content" => prompt)]))
     r = HTTP.post("https://api.openai.com/v1/chat/completions",
                   ["Authorization" => "Bearer " * openai_key(), "Content-Type" => "application/json"],
-                  body; readtimeout = 120)
+                  body; request_timeout = 120)
     return JSON3.read(r.body).choices[1].message.content
 end
 

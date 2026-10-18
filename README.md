@@ -22,6 +22,8 @@ julia --project=. -e 'using Pkg; Pkg.instantiate()'
 
 Set API keys in your shell, never in project files. `OPENAI_API_KEY` is needed for audio transcription; `ANTHROPIC_API_KEY` is needed for the default Claude notes backend.
 
+Audio transcription also needs [`ffmpeg`](https://ffmpeg.org) on your `PATH` (`brew install ffmpeg`). Recordings are transcoded to a compact format before upload, and lectures that still exceed Whisper's 25 MB limit are split into chunks automatically — so files of any length work.
+
 ```sh
 julia --project=. LectureLearner.jl --text sample_transcript.txt
 julia --project=. LectureLearner.jl lecture.m4a
