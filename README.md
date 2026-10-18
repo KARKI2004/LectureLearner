@@ -1,6 +1,6 @@
 # Lecture Learner
 
-Lecture Learner turns a transcript into Markdown study notes and course announcements. It also includes OpenAI audio transcription and Claude notes paths. The offline transcript mode needs only Julia.
+Lecture Learner has two separate commands: local recording-to-text transcription, and the existing transcript-to-notes program. The notes program also retains its OpenAI audio and Claude notes paths.
 
 ## Quick start
 
@@ -11,6 +11,27 @@ julia --project=. LectureLearner.jl --offline --text sample_transcript.txt
 ```
 
 This writes `sample_transcript_notes.md`. Check the notes against the transcript: the offline summary can miss details.
+
+## Local transcription (recording to plain text)
+
+On this Apple M5 Mac, FFmpeg 8.1 is installed. Install [whisper.cpp](https://formulae.brew.sh/formula/whisper.cpp) and download an [English `small.en` model](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md) yourself. The model is about 466 MiB; `models/` is ignored by Git.
+
+```sh
+brew install whisper.cpp
+mkdir -p models
+curl -fL --output models/ggml-small.en.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin
+```
+
+For a 3-minute excerpt of a local MP4 (or other recording), run:
+
+```sh
+julia --project=. transcribe_local.jl "/full/path/lecture video.mp4" \
+  --model models/ggml-small.en.bin --start 0 --duration 180 \
+  --output transcripts/lecture_excerpt.txt
+```
+
+Omit `--start`, `--duration`, and `--output` for the full recording; the default output is `transcripts/<recording-name>_transcript.txt`. The command extracts temporary 16 kHz mono audio with FFmpeg, uses local `whisper-cli`, saves text without timestamps, prints elapsed processing time, and removes the temporary audio. It refuses to overwrite an existing transcript. Paths with spaces must be quoted. It does not upload recordings, download models, or run the notes program. On a Mac without FFmpeg, install it with `brew install ffmpeg`.
 
 ## Cloud setup
 
@@ -35,11 +56,11 @@ If cloud notes fail, the program uses the offline summarizer. Audio still requir
 julia --project=. test/runtests.jl
 ```
 
-**Tested:** Offline transcript processing was manually tested with `sample_transcript.txt`, and the generated notes were reviewed. The automated regression tests passed, including mocked cloud-response fallback.
+**Tested:** Offline transcript-to-notes processing was manually tested with `sample_transcript.txt`, and the generated notes were reviewed. The automated regression suite passed, including local transcription tests with mock executables. A synthetic MP4 was converted by the installed FFmpeg to 16 kHz, mono, 16-bit PCM WAV; a mock `whisper-cli` completed the local command.
 
-**Not tested:** Live cloud APIs and audio transcription were not tested.
+**Not tested:** Real speech recognition with whisper.cpp, the 2-3 minute lecture excerpt, a longer recording benchmark, live cloud APIs, and cloud audio transcription. `whisper-cli`, the model, and the lecture video were not available for those checks.
 
-`LectureLearner.jl` is the command-line program, `TextTools.jl` is the offline summarizer, and `docs/` holds the detailed current guide.
+`transcribe_local.jl` is the standalone local transcription command. `LectureLearner.jl` and `TextTools.jl` remain the notes pipeline. `docs/` holds its detailed guide.
 
 ## Presentation note
 

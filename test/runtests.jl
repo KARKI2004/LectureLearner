@@ -64,3 +64,5 @@ end
         @test success(setenv(cmd, "JULIA_DEPOT_PATH" => depot))
     end
 end
+
+include("local_transcription_tests.jl")
