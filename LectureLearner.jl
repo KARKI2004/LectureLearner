@@ -27,19 +27,25 @@ include("TextTools.jl")
 using .TextTools
 
 # Keep the transcript-only path usable without cloud packages installed.
+# Import at top level (not lazily inside a call): Julia 1.12+ world-age rules
+# forbid using a binding in the same world where it was just imported, so a
+# runtime `@eval import` would make the cloud functions throw MethodError.
+const CLOUD_OK = try
+    @eval import HTTP, JSON3
+    true
+catch
+    false
+end
+
 function load_cloud_packages()
-    try
-        @eval import HTTP, JSON3
-    catch e
-        error("Cloud mode requires HTTP and JSON3. Run `julia --project=. -e 'using Pkg; Pkg.instantiate()'` first. Original error: $(sprint(showerror, e))")
-    end
+    CLOUD_OK || error("Cloud mode requires HTTP and JSON3. Run `julia --project=. -e 'using Pkg; Pkg.instantiate()'` first.")
 end
 
 # ------------------------------------------------------------
 # Config
 # ------------------------------------------------------------
 const NOTES_BACKEND = :claude                # :claude or :openai
-const CLAUDE_MODEL  = "claude-haiku-5-5"     # fast + cheap; "claude-sonnet-5-5" for better notes
+const CLAUDE_MODEL  = "claude-haiku-4-5"     # fast + cheap; "claude-sonnet-5" for better notes
 const OPENAI_MODEL  = "gpt-4o-mini"
 const WHISPER_MODEL = "whisper-1"
 
